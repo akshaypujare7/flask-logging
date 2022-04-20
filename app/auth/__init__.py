@@ -1,5 +1,6 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-
+from flask import Blueprint, render_template, request, redirect, url_for, flash, Flask, has_request_context
+import os
+import logging
 from app.auth.decorators import admin_required
 from flask_login import login_user, login_required, logout_user, current_user
 from sqlalchemy.orm import load_only
@@ -8,9 +9,21 @@ from app.auth.forms import login_form, register_form, profile_form, security_for
 from app.db import db
 from app.db.models import User
 
+
 auth = Blueprint('auth', __name__, template_folder='templates')
 from flask import current_app
 
+
+class DebugFormatter(logging.Formatter):
+    def format(self, record):
+        if has_request_context():
+            record.url = request.url
+            record.remote_addr = request.remote_addr
+        else:
+            record.url = None
+            record.remote_addr = None
+
+        return super().format(record)
 
 
 
@@ -23,6 +36,7 @@ def login():
         user = User.query.filter_by(email=form.email.data).first()
         if user is None or not user.check_password(form.password.data):
             flash('Invalid username or password')
+            app.logger.debug('login Unsuccessful')
             return redirect(url_for('auth.login'))
         else:
             user.authenticated = True
@@ -50,6 +64,7 @@ def register():
                 db.session.add(user)
                 db.session.commit()
             flash('Congratulations, you are now a registered user!', "success")
+            app.logger.debug('User registered')
             return redirect(url_for('auth.login'), 302)
         else:
             flash('Already Registered')
@@ -170,4 +185,20 @@ def edit_account():
         return redirect(url_for('auth.dashboard'))
     return render_template('manage_account.html', form=form)
 
+def debug_log():
+    debug_file = os.path.abspath('app/logs/debug.log')
+    debug_handler = logging.FileHandler(debug_file)
+    # Create a log file formatter object to create the entry in the log
+    debug_formatter = DebugFormatter(
+        'Request timestamp: [%(asctime)s]\n' '%(url)s is requested by %(remote_addr)s\n'
+        '%(levelname)s in %(module)s: %(message)s'
+    )
+    # set the formatter for the log entry
+    debug_handler.setFormatter(debug_formatter)
+    # Set the logging level of the file handler object so that it logs INFO and up
+    debug_handler.setLevel(logging.DEBUG)
+    # Add the handler for the log entry
+    app.logger.addHandler(debug_handler)
 
+app = Flask(__name__)
+debug_hand = debug_log()
